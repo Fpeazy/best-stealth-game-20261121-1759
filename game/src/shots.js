@@ -41,6 +41,21 @@ function guardCovers(g, x, y, crouched) {
     const mf = Math.atan2(g.vy, g.vx);
     if (canSee(g.x, g.y, mf, VISION.halfAngle + MARGIN_ANGLE, VISION.range + MARGIN_RANGE, x, y, crouched).visible) return true;
   }
+  // Round 3 (12:35 WIB): a patrolling guard turns toward its NEXT
+  // waypoint after its pause — a waiting player in that turn's sweep
+  // gets caught even though the CURRENT facing is safe (G2's turn at
+  // (11,15) swept its cone onto a stationary player at row 10, t=7.85,
+  // and the rev2 movement-facing check misses it because the guard's
+  // velocity is 0 while it pauses). So check the next-waypoint facing
+  // too: the cone the guard is ABOUT to sweep. The driver then waits
+  // west of the sweep (near tile 7) instead of inside it, and only
+  // crosses after G2 has turned and moved on.
+  if (!g.static && g.route && g.route.length > 1) {
+    const wp = g.route[g.waypoint % g.route.length];
+    const c = tileCenter(wp[0], wp[1]);
+    const nf = Math.atan2(c.y - g.y, c.x - g.x);
+    if (canSee(g.x, g.y, nf, VISION.halfAngle + MARGIN_ANGLE, VISION.range + MARGIN_RANGE, x, y, crouched).visible) return true;
+  }
   return false;
 }
 

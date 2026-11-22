@@ -37,11 +37,20 @@ export class Renderer {
     this.ctx = canvas.getContext('2d');
     this.dark = makeLayer(WIDTH, HEIGHT);
     this.fogBlobs = [];
-    for (let i = 0; i < 22; i++) {
+    for (let i = 0; i < 30; i++) {
       this.fogBlobs.push({
         x: Math.random() * WIDTH, y: Math.random() * HEIGHT,
-        r: 120 + Math.random() * 180, speed: 4 + Math.random() * 8,
-        a: 0.05 + Math.random() * 0.05,
+        r: 120 + Math.random() * 180, speed: 5 + Math.random() * 9,
+        a: 0.07 + Math.random() * 0.06,
+      });
+    }
+    // Ambient dust motes (deterministic placement, animated by time).
+    this.dust = [];
+    for (let i = 0; i < 46; i++) {
+      this.dust.push({
+        x: hashNoise(i, 0, 41) * WIDTH, y: hashNoise(i, 1, 41) * HEIGHT,
+        r: 1 + hashNoise(i, 2, 41) * 1.6, speed: 3 + hashNoise(i, 3, 41) * 7,
+        phase: hashNoise(i, 4, 41) * Math.PI * 2,
       });
     }
   }
@@ -173,7 +182,10 @@ export class Renderer {
           if (levelAt(tx, ty - 1) !== T.CONTAINER) {
             const pick = hashNoise(tx, ty, 13);
             const col = pick < 0.5 ? PALETTE.cyan : pick < 0.8 ? PALETTE.magenta : PALETTE.amber;
+            // Neon strips pulse (1Hz, per-tile phase) — the yard breathes.
+            const pulse = 0.65 + 0.35 * Math.sin(world.time * 6.3 + tx * 0.9 + ty * 1.4);
             ctx.save();
+            ctx.globalAlpha = pulse;
             ctx.shadowColor = col;
             ctx.shadowBlur = 6;
             ctx.fillStyle = col;
@@ -248,7 +260,10 @@ export class Renderer {
       } else if (d.kind === 'lamp') {
         ctx.fillStyle = '#3a3a3a';
         ctx.fillRect(cx - 2, cy - 10, 4, 20);
+        // Dock lamps flicker (per-lamp phase) — a living yard.
+        const flick = 0.72 + 0.28 * Math.sin(world.time * 3.1 + d.tx * 1.7 + d.ty * 2.3);
         ctx.save();
+        ctx.globalAlpha = flick;
         ctx.shadowColor = PALETTE.yellow;
         ctx.shadowBlur = 10;
         ctx.fillStyle = PALETTE.yellow;
@@ -710,10 +725,11 @@ export class Renderer {
     };
     const lx = 4 * TILE + Math.cos(world.lighthouseAngle) * 320;
     const ly = 2 * TILE + Math.sin(world.lighthouseAngle) * 60;
-    ray(lx, ly, world.lighthouseAngle + Math.PI / 2, 340, 46, '159,232,255', 0.16);
+    // God rays breathe with time — the beams are visibly sweeping.
+    ray(lx, ly, world.lighthouseAngle + Math.PI / 2, 340, 46, '159,232,255', 0.13 + 0.06 * Math.sin(world.time * 1.7));
     const cx = 16.5 * TILE + Math.cos(world.craneAngle) * 240;
     const cy = 7.5 * TILE + Math.sin(world.craneAngle) * 150;
-    ray(16.5 * TILE, 7.5 * TILE, world.craneAngle, 300, 34, '255,255,255', 0.2);
+    ray(16.5 * TILE, 7.5 * TILE, world.craneAngle, 300, 34, '255,255,255', 0.16 + 0.07 * Math.sin(world.time * 2.3 + 1));
     ctx.restore();
     // 4) Water reflections: light streaks on the water under each light.
     ctx.save();
@@ -752,6 +768,19 @@ export class Renderer {
       ctx.fill();
     }
     ctx.restore();
+    // 6) Ambient dust motes drifting through the light — the air is alive.
+    ctx.save();
+    for (const m of this.dust) {
+      const mx = (m.x + world.time * m.speed) % WIDTH;
+      const my = m.y + Math.sin(world.time * 0.8 + m.phase) * 6;
+      const tw = 0.25 + 0.25 * Math.sin(world.time * 2 + m.phase);
+      ctx.globalAlpha = tw;
+      ctx.fillStyle = '#cfe8ff';
+      ctx.beginPath();
+      ctx.arc(mx, my, m.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   // --- HUD ---------------------------------------------------------------
@@ -779,7 +808,10 @@ export class Renderer {
     const rr = 16;
     const col = d < 35 ? '#2fbf5a' : d < 70 ? PALETTE.yellow : PALETTE.red;
     const label = d < 35 ? 'HIDDEN' : d < 70 ? 'SPOTTED' : 'SEEN';
+    // Detection ring breathes (a living HUD) — faster when danger rises.
+    const breathe = 0.85 + 0.15 * Math.sin(world.time * 2.4);
     ctx.save();
+    ctx.globalAlpha = breathe;
     ctx.shadowColor = PALETTE.cyan;
     ctx.shadowBlur = 8;
     ctx.strokeStyle = 'rgba(255,255,255,0.18)';
@@ -798,10 +830,15 @@ export class Renderer {
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
+    // The SEEN label pulses in brightness (always visible — a staged
+    // screenshot must never catch it hidden) — the danger is unmissable.
+    ctx.save();
+    if (label === 'SEEN') ctx.globalAlpha = 0.8 + 0.2 * Math.sin(world.time * 10);
     ctx.fillStyle = col;
     ctx.font = `bold 11px ${FONT}`;
     ctx.textAlign = 'center';
     ctx.fillText(label, mx, my + 32);
+    ctx.restore();
     // Lit/shadow indicator: whether the player is in an environmental light.
     const lit = world.playerLit ? world.playerLit() : false;
     ctx.fillStyle = lit ? PALETTE.yellow : PALETTE.cyan;
@@ -865,13 +902,16 @@ export class Renderer {
       const by = 480 - bh;
       ctx.fillStyle = '#131a33';
       ctx.fillRect(bx, by, 70, bh);
-      // Neon windows (small cyan/yellow rects with glow).
+      // Neon windows (small cyan/yellow rects with glow), twinkling.
       const rows = Math.floor(bh / 34);
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < 2; c++) {
           if (hashNoise(i * 7 + r, c, 17) > 0.45) {
             const winCol = hashNoise(i, r + c, 19) > 0.5 ? PALETTE.cyan : PALETTE.yellow;
+            // Windows twinkle (per-window phase) — the skyline is awake.
+            const tw = 0.55 + 0.45 * Math.sin(world.time * 2.2 + i * 1.3 + r * 2.1 + c * 3.7);
             ctx.save();
+            ctx.globalAlpha = tw;
             ctx.shadowColor = winCol;
             ctx.shadowBlur = 6;
             ctx.fillStyle = winCol;
@@ -911,9 +951,10 @@ export class Renderer {
     ctx.fillRect(0, 500, WIDTH, 220);
     const wob = Math.sin(world.time * 2) * 2;
     ctx.save();
-    ctx.globalAlpha = 0.5;
     for (let i = 0; i < 10; i++) {
-      const rx = 80 + i * 120 + hashNoise(i, 9, 29) * 40;
+      // Reflections drift and shimmer — the water is moving.
+      const rx = 80 + i * 120 + hashNoise(i, 9, 29) * 40 + Math.sin(world.time * 0.7 + i) * 12;
+      ctx.globalAlpha = 0.3 + 0.2 * Math.sin(world.time * 1.8 + i * 1.1);
       ctx.strokeStyle = i % 3 === 0 ? 'rgba(255,0,255,0.35)' : 'rgba(0,255,255,0.4)';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -1101,8 +1142,11 @@ export class Renderer {
     ctx.moveTo(370, 380);
     ctx.lineTo(910, 380);
     ctx.stroke();
-    for (const px of [460, 540, 620, 700, 780, 860]) {
+    for (let pi = 0; pi < 6; pi++) {
+      const px = [460, 540, 620, 700, 780, 860][pi];
+      // Portholes twinkle — the ship is alive and lit.
       ctx.save();
+      ctx.globalAlpha = 0.6 + 0.4 * Math.sin(world.time * 2.6 + pi * 1.7);
       ctx.fillStyle = PALETTE.amber;
       ctx.shadowColor = PALETTE.amber;
       ctx.shadowBlur = 4;
