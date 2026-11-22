@@ -418,40 +418,44 @@ export class Renderer {
       ctx.restore();
     }
     const bobY = p.bob;
-    const h = p.crouched ? 14 : 24; // crouch: low and wide; standing: tall and slim
-    const w = p.crouched ? 20 : 16;
-    // Soft cyan glow halo so the player pops at contact-sheet size.
+    // Round 2 (12:05 WIB): the player was still hard to find at
+    // contact-sheet size (768x480), so the drawn figure is bigger and
+    // brighter. Drawn size only — the collision radius in config.js is
+    // unchanged, so movement, vision and the lose condition are untouched.
+    const h = p.crouched ? 20 : 30; // crouch: low and wide; standing: tall and slim
+    const w = p.crouched ? 28 : 22;
+    // Strong cyan glow halo so the player pops at contact-sheet size.
     ctx.save();
-    const halo = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 28);
-    halo.addColorStop(0, 'rgba(0,242,255,0.25)');
+    const halo = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 46);
+    halo.addColorStop(0, 'rgba(0,242,255,0.45)');
     halo.addColorStop(1, 'rgba(0,242,255,0)');
     ctx.fillStyle = halo;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 28, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, 46, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
     // Shadow under the player.
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.beginPath();
-    ctx.ellipse(p.x, p.y + 12, 12, 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(p.x, p.y + 14, 14, 5, 0, 0, Math.PI * 2);
     ctx.fill();
-    // Body: white with a 2px cyan outline; sprint leans forward.
+    // Body: white with a 3px cyan outline; sprint leans forward.
     ctx.save();
     ctx.translate(p.x, p.y + bobY);
     if (p.sprinting) ctx.rotate(0.12 * Math.cos(p.facing));
     ctx.fillStyle = PALETTE.white;
     ctx.strokeStyle = PALETTE.cyan;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.roundRect(-w / 2, -h / 2, w, h, 5);
+    ctx.roundRect(-w / 2, -h / 2, w, h, 6);
     ctx.fill();
     ctx.stroke();
-    // Directional eye line (facing): 4px cyan, the player's mark.
+    // Directional eye line (facing): 5px cyan, the player's mark.
     ctx.strokeStyle = PALETTE.cyan;
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 5;
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.lineTo(Math.cos(p.facing) * 14, Math.sin(p.facing) * 14);
+    ctx.lineTo(Math.cos(p.facing) * 18, Math.sin(p.facing) * 18);
     ctx.stroke();
     ctx.restore();
   }

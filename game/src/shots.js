@@ -18,12 +18,37 @@ const IDLE_CROUCH = {
   mouse: { x: 0, y: 0 },
 };
 
+// Round 2 (12:05 WIB): the careful driver treats "near a cone" as
+// "seen" — a safety margin, because the guards MOVE during a leg and
+// crouching only halves the detection RATE, not the vision range (see
+// guard.js seePlayer: crouched x0.5 on the rate, full 210px range).
+// Without the margin, a guard's cone sweeps onto the player mid-leg and
+// the +5000 no-detection bonus is lost on a 0.1 suspicion blip.
+// The margin (range +50px, half-angle +0.15 rad) covers a guard moving
+// ~11px per leg plus the player's own movement.
+const MARGIN_RANGE = 50;
+const MARGIN_ANGLE = 0.3;
+
+// A guard's cone also sweeps toward its movement direction while it
+// turns at a waypoint — a waiting player in the sweep path gets caught
+// even though the CURRENT facing is safe (G2's turn at (11,15) swept
+// its cone onto a stationary player at row 10, t=7.85). So check BOTH
+// the current facing and the movement-direction facing.
+function guardCovers(g, x, y, crouched) {
+  if (canSee(g.x, g.y, g.facing, VISION.halfAngle + MARGIN_ANGLE, VISION.range + MARGIN_RANGE, x, y, crouched).visible) return true;
+  const sp = Math.hypot(g.vx || 0, g.vy || 0);
+  if (sp > 1) {
+    const mf = Math.atan2(g.vy, g.vx);
+    if (canSee(g.x, g.y, mf, VISION.halfAngle + MARGIN_ANGLE, VISION.range + MARGIN_RANGE, x, y, crouched).visible) return true;
+  }
+  return false;
+}
+
 // Is the player currently visible to any guard (a read-only check)?
+// Uses the safety margin: near a cone counts as seen.
 function playerSeen(world) {
   for (const g of world.guards) {
-    const s = canSee(g.x, g.y, g.facing, VISION.halfAngle, VISION.range,
-      world.player.x, world.player.y, world.player.crouched);
-    if (s.visible) return true;
+    if (guardCovers(g, world.player.x, world.player.y, world.player.crouched)) return true;
   }
   return false;
 }
@@ -60,8 +85,7 @@ function stepWorld(world, input, sfx, n) {
 // walks into a cone (any exposure loses the no-detection bonus).
 function targetSeen(world, tx, ty) {
   for (const g of world.guards) {
-    const s = canSee(g.x, g.y, g.facing, VISION.halfAngle, VISION.range, tx, ty, false);
-    if (s.visible) return true;
+    if (guardCovers(g, tx, ty, false)) return true;
   }
   return false;
 }
@@ -79,8 +103,7 @@ function futureSeen(world, tx, ty) {
   const nx = p.x + (dx / d) * 22;
   const ny = p.y + (dy / d) * 22;
   for (const g of world.guards) {
-    const s = canSee(g.x, g.y, g.facing, VISION.halfAngle, VISION.range, nx, ny, false);
-    if (s.visible) return true;
+    if (guardCovers(g, nx, ny, false)) return true;
   }
   return false;
 }
@@ -89,20 +112,28 @@ function futureSeen(world, tx, ty) {
 // a clear lane, move in short legs, and pause if a guard spots the
 // player. Deterministic — the same seed always gives the same path.
 function driveCareful(world, tx, ty) {
-  for (let i = 0; i < 16; i++) {
+  // Wait longer for a clear window (up to 20s): with the safety margin
+  // the driver must not proceed into a marginal lane, and a guard loop
+  // takes ~15s, so a clear window needs a longer wait. The waits step
+  // 2 steps at a time so a sweeping cone is caught before it lands.
+  for (let i = 0; i < 600; i++) {
     if (!playerSeen(world) && !targetSeen(world, tx, ty) && !futureSeen(world, tx, ty)) break;
-    stepWorld(world, IDLE_CROUCH, silent, 15);
+    stepWorld(world, IDLE_CROUCH, silent, 2);
     if (world.won || world.lost) return;
   }
-  for (let leg = 0; leg < 40; leg++) {
+  // Move in 2-step chunks (not 12): a guard turns 5 rad/s, so in a
+  // 12-step chunk its cone sweeps a full radian and can land on the
+  // player mid-chunk. At 2 steps the sweep is 0.17 rad, inside the
+  // 0.30 rad margin, so the check-before-every-chunk stays valid.
+  for (let leg = 0; leg < 300; leg++) {
     const dx = tx - world.player.x;
     const dy = ty - world.player.y;
     if (Math.hypot(dx, dy) < 8 || world.won || world.lost) break;
-    if (playerSeen(world) || targetSeen(world, tx, ty) || futureSeen(world, tx, ty)) stepWorld(world, IDLE_CROUCH, silent, 30);
+    if (playerSeen(world) || targetSeen(world, tx, ty) || futureSeen(world, tx, ty)) stepWorld(world, IDLE_CROUCH, silent, 2);
     // The win driver crouches while moving: a crouched player is seen
-    // at half the vision range, so the patrol crossings stay safe.
-    else stepWorld(world, driveTo(world, tx, ty, { crouch: true }), silent, 12);
-    if (world.detection > 70) stepWorld(world, IDLE_CROUCH, silent, 60);
+    // at half the detection rate, so the patrol crossings stay safe.
+    else stepWorld(world, driveTo(world, tx, ty, { crouch: true }), silent, 2);
+    if (world.detection > 70) stepWorld(world, IDLE_CROUCH, silent, 2);
   }
 }
 
