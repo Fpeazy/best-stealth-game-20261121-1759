@@ -103,9 +103,12 @@ export class Guard {
       player.x, player.y, player.crouched,
     );
     if (!seen.visible) return 0;
-    // Lit or shadow: a point is lit when inside any light pool.
+    // Lit or shadow: a point is lit when inside an ENVIRONMENTAL light
+    // pool (the player's own flashlight does not light them — otherwise
+    // the shadow rate could never apply).
     let lit = false;
     for (const l of lights) {
+      if (l.kind === 'flashlight') continue;
       if (Math.hypot(player.x - l.x, player.y - l.y) < l.radius) {
         lit = true;
         break;

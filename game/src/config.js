@@ -17,6 +17,8 @@ export const PALETTE = {
   cyan: '#00f2ff', // light / player
   cyanDim: '#0a7d8c', // dim cyan
   yellow: '#ffd700', // sodium warning
+  magenta: '#ff00ff', // futuristic neon accent (signage + airlock seals only)
+  amber: '#ffaa00', // neon amber (ship hull line, deck-edge strips)
   fog: '#6b7280', // fog grey
   fogLight: '#9aa3b2', // light fog
   dock: '#2a2f45', // dock floor
@@ -180,6 +182,44 @@ export const GUARD_ROUTES = [
 
 // Crane searchlight: sweeps from the crane base, a hazard (not a guard).
 export const CRANE = { x: 16.5, y: 7.5, range: 260, halfAngle: 0.22 };
+
+// Loot: 3 manifest items (+500/+750/+1000), off the main path but within
+// 150px of a patrol/cone. The staged win routes through all three.
+export const LOOT = [
+  { tx: 6, ty: 12, name: 'Manifest Kargo', points: 500 },
+  { tx: 17, ty: 4, name: 'Log Kapal', points: 750 },
+  { tx: 24, ty: 4, name: 'Kunci Cadangan', points: 1000 },
+];
+
+// The warehouse office, themed as a futuristic space-station control
+// room: x 1-5, y 13-16 (bottom-left), key at (3,14), door gap (3,13),
+// spawn (2,12). The console is the key's pedestal at (3,14).
+export const OFFICE = { x0: 1, y0: 13, x1: 5, y1: 16, key: { x: 3, y: 14 }, door: { x: 3, y: 13 }, spawn: { x: 2, y: 12 } };
+
+// Decor: ~24 non-solid objects that make the port denser (drawn on top
+// of the floor; they never block movement or vision, and never sit on
+// the objective path or a guard route).
+export const DECOR = [
+  // Barrels (near the warehouse + crane yard).
+  { kind: 'barrel', tx: 9, ty: 13 }, { kind: 'barrel', tx: 13, ty: 12 },
+  { kind: 'barrel', tx: 20, ty: 12 }, { kind: 'barrel', tx: 28, ty: 13 },
+  // Pallets (stacked near containers).
+  { kind: 'pallet', tx: 5, ty: 5 }, { kind: 'pallet', tx: 19, ty: 8 },
+  { kind: 'pallet', tx: 26, ty: 9 }, { kind: 'pallet', tx: 10, ty: 14 },
+  // Bollards (along the dock edges, beside the water).
+  { kind: 'bollard', tx: 2, ty: 2 }, { kind: 'bollard', tx: 6, ty: 2 },
+  { kind: 'bollard', tx: 10, ty: 2 }, { kind: 'bollard', tx: 18, ty: 2 },
+  { kind: 'bollard', tx: 12, ty: 16 }, { kind: 'bollard', tx: 22, ty: 16 },
+  // Dock lamps (warm, on the dock).
+  { kind: 'lamp', tx: 4, ty: 4 }, { kind: 'lamp', tx: 20, ty: 8 },
+  { kind: 'lamp', tx: 28, ty: 10 }, { kind: 'lamp', tx: 12, ty: 14 },
+  // Buoys (in the water).
+  { kind: 'buoy', tx: 5, ty: 0 }, { kind: 'buoy', tx: 12, ty: 1 },
+  { kind: 'buoy', tx: 25, ty: 17 },
+  // Rope coils (near the ship).
+  { kind: 'rope', tx: 19, ty: 4 }, { kind: 'rope', tx: 22, ty: 4 },
+  { kind: 'rope', tx: 26, ty: 5 },
+];
 
 // The level, built once. Tile lookup: levelAt(x, y) returns the char.
 export const LEVEL = buildLevel();

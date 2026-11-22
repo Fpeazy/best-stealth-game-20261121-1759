@@ -6,6 +6,7 @@ import { STEP } from './world.js';
 import { SCREEN } from './render.js';
 import { TILE, VISION, tileCenter } from './config.js';
 import { canSee } from './vision.js';
+import { TALK_LINES, emotionFor } from './talk.js';
 
 // A no-op sfx (screenshots are silent).
 const silent = null;
@@ -54,12 +55,42 @@ function stepWorld(world, input, sfx, n) {
   }
 }
 
+// Is the point (x,y) currently visible to any guard (a read-only check)?
+// The careful driver waits until the DESTINATION is unseen, so it never
+// walks into a cone (any exposure loses the no-detection bonus).
+function targetSeen(world, tx, ty) {
+  for (const g of world.guards) {
+    const s = canSee(g.x, g.y, g.facing, VISION.halfAngle, VISION.range, tx, ty, false);
+    if (s.visible) return true;
+  }
+  return false;
+}
+
+// Would the player be visible after the next short leg toward (tx,ty)?
+// A 1-leg lookahead: the driver checks where it will be, not just where
+// it is, so it never steps into a cone's edge mid-leg.
+function futureSeen(world, tx, ty) {
+  const p = world.player;
+  const dx = tx - p.x;
+  const dy = ty - p.y;
+  const d = Math.hypot(dx, dy);
+  if (d < 8) return false;
+  // 12 steps at walk speed (112px/s) = ~22px toward the target.
+  const nx = p.x + (dx / d) * 22;
+  const ny = p.y + (dy / d) * 22;
+  for (const g of world.guards) {
+    const s = canSee(g.x, g.y, g.facing, VISION.halfAngle, VISION.range, nx, ny, false);
+    if (s.visible) return true;
+  }
+  return false;
+}
+
 // Drive to (tx, ty) the careful way a human would: wait (crouched) for
 // a clear lane, move in short legs, and pause if a guard spots the
 // player. Deterministic — the same seed always gives the same path.
 function driveCareful(world, tx, ty) {
   for (let i = 0; i < 16; i++) {
-    if (!playerSeen(world)) break;
+    if (!playerSeen(world) && !targetSeen(world, tx, ty) && !futureSeen(world, tx, ty)) break;
     stepWorld(world, IDLE_CROUCH, silent, 15);
     if (world.won || world.lost) return;
   }
@@ -67,8 +98,10 @@ function driveCareful(world, tx, ty) {
     const dx = tx - world.player.x;
     const dy = ty - world.player.y;
     if (Math.hypot(dx, dy) < 8 || world.won || world.lost) break;
-    if (playerSeen(world)) stepWorld(world, IDLE_CROUCH, silent, 30);
-    else stepWorld(world, driveTo(world, tx, ty), silent, 12);
+    if (playerSeen(world) || targetSeen(world, tx, ty) || futureSeen(world, tx, ty)) stepWorld(world, IDLE_CROUCH, silent, 30);
+    // The win driver crouches while moving: a crouched player is seen
+    // at half the vision range, so the patrol crossings stay safe.
+    else stepWorld(world, driveTo(world, tx, ty, { crouch: true }), silent, 12);
     if (world.detection > 70) stepWorld(world, IDLE_CROUCH, silent, 60);
   }
 }
@@ -89,11 +122,13 @@ export function stageShot(name, world) {
   }
 
   if (name === 'stealth') {
-    // Walk to a container in the crane yard, then crouch behind it while
+    // Walk to a container in the crane yard, then crouch beside it while
     // a guard's cone sweeps past. Detection settles ~40% (yellow).
-    const hide = tileCenter(13, 6);
+    // The hide is 1 tile west of the container, so the player reads
+    // beside it (not fully behind it) at contact-sheet size.
+    const hide = tileCenter(12, 6);
     stepWorld(world, driveTo(world, hide.x, hide.y), silent, 60 * 6);
-    // Crouch behind the container, facing the patrolling guard.
+    // Crouch beside the container, facing the patrolling guard.
     const crouchInput = driveTo(world, hide.x, hide.y, { crouch: true });
     stepWorld(world, crouchInput, silent, 60 * 4);
     // Nudge detection into the yellow band deterministically.
@@ -118,27 +153,69 @@ export function stageShot(name, world) {
       // Face the player, so the red cone cuts through the fog toward them.
       nearest.facing = Math.atan2(world.player.y - nearest.y, world.player.x - nearest.x);
     }
+    // Talk bubbles (staged, fully typed): a patrolling guard's line +
+    // the player's objective line. The investigating guard has no bubble
+    // (the queue shows one guard bubble; the red cone still reads danger).
+    let patrolGuard = null;
+    let farthestD = -1;
+    for (const g of world.guards) {
+      if (g.state !== 'patrol') continue;
+      const d = Math.hypot(g.x - world.player.x, g.y - world.player.y);
+      if (d > farthestD) {
+        farthestD = d;
+        patrolGuard = g;
+      }
+    }
+    if (patrolGuard) {
+      world.talk.stage(emotionFor('patrol') + TALK_LINES.guardPatrol, patrolGuard.x, patrolGuard.y - 56, 'guard', 'guard');
+    }
+    world.talk.stage(TALK_LINES.playerObj1, world.player.x, world.player.y - 56, 'player', 'player');
     return { screen: SCREEN.PLAY };
   }
 
   if (name === 'alert') {
-    // Grab the key, then sprint for the gangplank while a guard chases:
+    // Grab the key, then sprint for the gangplank while guards chase:
     // detection red, cones red, dust trail behind the sprinting player.
     const key = world.keyPos;
     stepWorld(world, driveTo(world, key.x, key.y), silent, 60 * 5);
     world.keyTaken = true;
     const exit = world.exitPos;
-    // Sprint toward the gangplank; force the nearest guard into CHASE
-    // and the meter to red for the staged frame.
+    // Sprint toward the gangplank; the 2 nearest guards go to CHASE and
+    // the meter to red for the staged frame (the others investigate, so
+    // the cones stay distinct instead of a muddy red wash).
     const sprintInput = driveTo(world, exit.x, exit.y - 60, { sprint: true });
     stepWorld(world, sprintInput, silent, 60 * 3);
     world.detection = 88;
-    for (const g of world.guards) {
-      g.suspicion = 88;
-      g.state = 'chase';
+    const byDist = [...world.guards].sort((a, b) => {
+      const da = Math.hypot(a.x - world.player.x, a.y - world.player.y);
+      const db = Math.hypot(b.x - world.player.x, b.y - world.player.y);
+      return da - db;
+    });
+    byDist.forEach((g, i) => {
       g.lastSeen = { x: world.player.x, y: world.player.y };
-      g.alertMark = 1;
-    }
+      if (i < 2) {
+        g.suspicion = 88;
+        g.state = 'chase';
+        g.alertMark = 1;
+      } else if (i === 2) {
+        g.suspicion = 70;
+        g.state = 'investigate';
+      } else {
+        g.suspicion = 50;
+        g.state = 'suspect';
+      }
+    });
+    // The nearest guard's cone is rotated -15 deg so it does not cover
+    // the player.
+    const nearest = byDist[0];
+    nearest.facing = Math.atan2(world.player.y - nearest.y, world.player.x - nearest.x) - 0.26;
+    // Shooting effects (visual only): a warning shot + a red flare.
+    world.shotFx.flash = { x: nearest.x, y: nearest.y, life: 0.08, maxLife: 0.08 };
+    world.shotFx.tracer = { x1: nearest.x, y1: nearest.y, x2: world.player.x, y2: world.player.y, life: 0.25, maxLife: 0.25 };
+    world.shotFx.flare = { x: nearest.x, y: nearest.y - 30, vy: -20, life: 2.5, maxLife: 2.5 };
+    // Talk bubbles (staged, fully typed): the chase bark + the player's line.
+    world.talk.stage(emotionFor('chase') + TALK_LINES.guardChase, nearest.x, nearest.y - 56, 'guard', 'guard');
+    world.talk.stage(TALK_LINES.playerObj2, world.player.x, world.player.y - 56, 'player', 'player');
     return { screen: SCREEN.PLAY };
   }
 
@@ -147,11 +224,13 @@ export function stageShot(name, world) {
     // frame settle (ship lights on, fog clearing). The careful driver
     // times the patrols (a blind drive walks into the warehouse guard
     // and gets caught), and the waypoints walk around the containers so
-    // the route map shows a real path across the dock.
+    // the route map shows a real path across the dock — via all 3 loot
+    // tiles (and over the deck, around the gangplank guard), so the
+    // staged win shows the computed Grade S score.
     const key = world.keyPos;
     driveCareful(world, key.x, key.y);
     world.keyTaken = true;
-    const waypoints = [[3, 12], [7, 12], [7, 10], [12, 10], [12, 7], [12, 4], [18, 4], [20, 4], [20, 3]];
+    const waypoints = [[3, 12], [6, 12], [7, 12], [7, 10], [12, 10], [12, 7], [12, 4], [17, 4], [18, 4], [19, 3], [24, 3], [24, 4], [20, 3]];
     for (const [tx, ty] of waypoints) {
       const p = tileCenter(tx, ty);
       driveCareful(world, p.x, p.y);
@@ -159,8 +238,9 @@ export function stageShot(name, world) {
     }
     const exit = world.exitPos;
     world.won = true;
-    world.winTime = 47;
-    world.noDetections = true;
+    // The timer is the staged run's REAL time (computed, not hardcoded).
+    world.winTime = Math.round(world.time);
+    world.noDetections = world.score.noDetection;
     world.player.x = exit.x;
     world.player.y = exit.y + 30;
     return { screen: SCREEN.WIN };
