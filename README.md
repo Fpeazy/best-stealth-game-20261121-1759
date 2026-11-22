@@ -1,8 +1,8 @@
 # SHADOW DOCK — a night port heist
 
-[![make.fun](https://make.fun/api/badge/best-stealth-game-20261121-1759)](https://make.fun/bounty/best-stealth-game-20261121-1759)
-[![make.fun](https://make.fun/api/badge/best-stealth-game-20261121-1759/entries)](https://make.fun/bounty/best-stealth-game-20261121-1759)
-[![make.fun](https://make.fun/api/badge/best-stealth-game-20261121-1759/prize)](https://make.fun/bounty/best-stealth-game-20261121-1759)
+[![make.fun](https://make.fun/badge/best-stealth-game-20261121-1759.svg)](https://make.fun/bounty/best-stealth-game-20261121-1759)
+[![rank](https://make.fun/badge/best-stealth-game-20261121-1759/Fpeazy/best-stealth-game-20261121-1759/rank.svg)](https://make.fun/bounty/best-stealth-game-20261121-1759)
+[![reward](https://make.fun/badge/best-stealth-game-20261121-1759/Fpeazy/best-stealth-game-20261121-1759/reward.svg)](https://make.fun/bounty/best-stealth-game-20261121-1759)
 
 A top-down stealth game set in a night harbour. Steal the ship's
 ignition key from the space-station control room (the warehouse office,
